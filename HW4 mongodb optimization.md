@@ -14,6 +14,7 @@
 ## Установка
 
 ### 1. Заполнение docker-compose.yml 
+[Файл docker-compose.yml](./HW4/docker-compose.yml )
 
 ### 2. Запуск docker compose up -d
 
@@ -123,13 +124,12 @@ db.collections.find({ _id: "sample_db.companies" })
 ![create_index](pictures/4_6_index.png)
 
 
-Проверка, что коллекция сейчас не шардирована
+Проверка, что коллекция сейчас не шардирована, возвращает null, это ок
 
 ```javascript
 use config
 db.collections.findOne({ _id: "sample_db.companies" })
 ```
-// Должен вернуть null или { dropped: false }
 
 Проверка на каком шарде находятся данные
 
@@ -139,6 +139,16 @@ db.companies.getShardDistribution()
 ```
 ![check](pictures/4_7_check.png)
 
+Коллекция слишком маленькая, нужно сократить размер чанка
+```javascript
+use config
+db.settings.updateOne(
+  { _id: "chunksize" },
+  { $set: { value: 10 } },  // Размер в MB
+  { upsert: true }
+)
+```
+
 Проверка балансировки - общий статус 
 ![check_status](pictures/4_8_companies.png)
 
@@ -146,6 +156,96 @@ db.companies.getShardDistribution()
 ![distrib](pictures/4_9_distrib.png)
 
 
+
+### 8. Поронять разные инстансы, посмотреть, что будет происходить, поднять обратно. Описать что произошло.
+
+#### Тестирование отказоустойчивости отдельных нод в Replica Set
+
+Определение текущего Primary для каждого шарда
+```javascript
+// Для shard1rs
+mongosh --host shard1-rs1 --port 27018 --eval "rs.isMaster().primary"
+
+// Для shard2rs
+mongosh --host shard2-rs2 --port 27018 --eval "rs.isMaster().primary"
+
+// Для shard3rs
+mongosh --host shard3-rs1 --port 27018 --eval "rs.isMaster().primary"
+```
+
+![4_test_1_master](pictures/4_test_1_master.png)
+
+Остановка Primary ноды ```docker stop shard2-rs1```
+
+Primary перевыбралась
+![4_test_2_primary](pictures/4_test_2_primary.png)
+
+
+Подключаемся, чтобы проверить
+```mongosh "mongodb://shard2-rs2:27018"```
+
+```javascript
+rs.status().members.forEach(m => {
+  printjson({
+    name: m.name,
+    stateStr: m.stateStr,
+    health: m.health,
+    lastHeartbeat: new Date(m.lastHeartbeat)
+  })
+})
+```
+![4_test_3_not_reachable](pictures/4_test_3_not_reachable.png)
+
+Включаем ноду обратно ```docker start shard2-rs1```
+
+![4_test_4_node_primary](pictures/4_test_4_node_primary.png)
+
+#### Тестирование отказа шарда 
+
+Остановка всех нод shard2rs ```docker stop shard2-rs1 shard2-rs2 shard2-rs3```
+
+Проверка состояния кластера ```h.status();``` выдает все шарды в состоянии 1
+
+Проверка посчитать ```db.companies.countDocuments();```
+MongoServerError[FailedToSatisfyReadPreference]: Could not find host matching read preference { mode: "secondaryPreferred" } for set shard2rs
+
+Попытка записи прошла успешно - "Write succeeded"
+```javascript
+mongosh sample_db --eval "
+  try {
+    db.companies.insertOne({ name: 'Test Company', permalink: 'test-company-' + new Date().getTime() });
+    print('Write succeeded');
+  } catch(e) { print('Write failed:', e); }
+"
+```
+Проверка распределения не проходит ```db.companies.getShardDistribution()```
+MongoServerError[FailedToSatisfyReadPreference]: Could not find host matching read preference { mode: "secondaryPreferred" } for set shard2rs
+
+
+Восстановление шарда ```docker start shard2-rs1 shard2-rs2 shard2-rs3```
+
+Количество посчиталось - 9502 
+```db.companies.countDocuments();```
+Проверка распределения теперь прошла ```db.companies.getShardDistribution()```
+{
+  data: '34.78MiB',
+  docs: 9502,
+  chunks: 2,
+  'Shard shard3rs': [
+    '71.08 % data',
+    '71.26 % docs in cluster',
+    '3KiB avg obj size on shard'
+  ],
+  'Shard shard2rs': [
+    '28.91 % data',
+    '28.73 % docs in cluster',
+    '3KiB avg obj size on shard'
+  ]
+}
+
+Получается, были доступны данные на включенных шардах, запись и чтение ок, а запросы, затрагивающие данные на отключенном шарде, будут падать
+
+### 9. Настроить аутентификацию и многоролевой доступ;
 
 ## P.S. Полезные команды
 Приостановка балансировки
@@ -166,7 +266,7 @@ echo "127.0.0.1 mongo3" | sudo tee -a /etc/hosts
 
 Для прямого соединения с бд указывать параметр directConnection
 
-```mongosh "mongodb://mongos:27017/?readPreference=secondaryPreferred&directConnection=true"```
+```mongosh "mongodb://localhost:27017/?readPreference=secondaryPreferred&directConnection=true"```
 
 Команда для подключения должна быть в кавычках, внутри перечисление хостов
 
