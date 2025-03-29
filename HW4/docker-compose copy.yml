@@ -1,0 +1,32 @@
+services:
+  mongo1:
+    image: mongo
+    hostname: mongo1
+    container_name: mongo1
+    ports:
+      - 30001:30001
+    entrypoint: ["mongod", "--replSet", "myReplicaSet", "--bind_ip_all", "--port", "30001"]
+  mongo2:
+    image: mongo
+    hostname: mongo2
+    container_name: mongo2
+    ports:
+      - 30002:30002
+    entrypoint: ["mongod", "--replSet", "myReplicaSet", "--bind_ip_all", "--port", "30002"]
+  mongo3:
+    image: mongo
+    hostname: mongo3
+    container_name: mongo3
+    ports:
+      - 30003:30003
+    entrypoint: ["mongod", "--replSet", "myReplicaSet", "--bind_ip_all", "--port", "30003"]
+  mongo_setup:
+    image: mongo
+    depends_on:
+      - mongo1
+      - mongo2
+      - mongo3
+    volumes:
+      - .:/scripts
+    restart: "no"
+    entrypoint: [ "bash", "/scripts/mongo_setup.sh"]
