@@ -210,6 +210,8 @@ rs.status().members.forEach(m => {
 MongoServerError[FailedToSatisfyReadPreference]: Could not find host matching read preference { mode: "secondaryPreferred" } for set shard2rs
 
 Попытка записи прошла успешно - "Write succeeded"
+![4_Write_succeeded](pictures/4_Write_succeeded.png)
+
 ```javascript
 mongosh sample_db --eval "
   try {
@@ -243,9 +245,102 @@ MongoServerError[FailedToSatisfyReadPreference]: Could not find host matching re
   ]
 }
 
-Получается, были доступны данные на включенных шардах, запись и чтение ок, а запросы, затрагивающие данные на отключенном шарде, будут падать
+При потере Primary ноды:
+    Автоматический перевыбор нового Primary в течение 10-30 секунд
+    Кратковременные ошибки записи во время выборов
+    Чтение продолжает работать с Secondary (если настроено readPreference)
 
-### 9. Настроить аутентификацию и многоролевой доступ;
+При полном отказе шарда:
+    Кластер отмечает шард как недоступный
+    Запросы к данным на этом шарде будут завершаться ошибкой
+    Данные на других шардах остаются доступными
+
+### 9. Настроить аутентификацию и многоролевой доступ
+
+Создание ключа в директории с файлом docker-compose.yml
+```openssl rand -base64 756 > mongo_keyfile && chmod 400 mongo_keyfile```
+
+docker exec -it cfg1 mongosh --port 27019
+
+# Инициализация реплика-сета
+rs.initiate({
+  _id: "cfgrs",
+  configsvr: true,
+  members: [
+    { _id: 0, host: "cfg1:27019" },
+    { _id: 1, host: "cfg2:27019" },
+    { _id: 2, host: "cfg3:27019" }
+  ]
+})
+
+# Создание администратора
+use admin
+db.createUser({
+  user: "admin",
+  pwd: "securepassword",
+  roles: [ { role: "root", db: "admin" } ]
+})
+
+Инициализация replica set + создание пользователя
+![4_auth_1](pictures/4_auth_1.png)
+
+
+
+docker exec -it cfg1 mongosh --port 27018 --eval "db.getSiblingDB('admin').getUsers()"
+```bash
+docker exec -it shard1-rs1 mongosh --port 27018 --eval "
+rs.initiate({
+  _id: 'shard1rs',
+  members: [
+    { _id: 0, host: 'shard1-rs1:27018', priority: 2 },
+    { _id: 1, host: 'shard1-rs2:27018', priority: 1 },
+    { _id: 2, host: 'shard1-rs3:27018', priority: 0 }
+  ]
+})"
+
+docker exec -it shard1-rs1 mongosh --port 27018 --db admin --eval "
+db.createUser({
+  user: 'admin',
+  pwd: 'securepassword',
+  roles: [ { role: 'root', db: 'admin' } ]
+})"
+
+
+docker exec -it shard2-rs1 mongosh --port 27018 --eval "
+rs.initiate({
+  _id: 'shard2rs',
+  members: [
+    { _id: 0, host: 'shard2-rs1:27018', priority: 2 },
+    { _id: 1, host: 'shard2-rs2:27018', priority: 1 },
+    { _id: 2, host: 'shard2-rs3:27018', priority: 0 }
+  ]
+})"
+docker exec -it shard1-rs1 mongosh --port 27018 --db admin --eval "
+db.createUser({
+  user: 'admin',
+  pwd: 'securepassword',
+  roles: [ { role: 'root', db: 'admin' } ]
+})"
+
+docker exec -it shard3-rs1 mongosh --port 27018 --eval "
+rs.initiate({
+  _id: 'shard3rs',
+  members: [
+    { _id: 0, host: 'shard3-rs1:27018', priority: 2 },
+    { _id: 1, host: 'shard3-rs2:27018', priority: 1 },
+    { _id: 2, host: 'shard3-rs3:27018', priority: 0 }
+  ]
+})"
+docker exec -it shard1-rs1 mongosh --port 27018 --db admin --eval "
+db.createUser({
+  user: 'admin',
+  pwd: 'securepassword',
+  roles: [ { role: 'root', db: 'admin' } ]
+})"
+```
+
+Хотелось сделать так, чтобы УЗ пробросились с роутера, но не получилось. Требуется больше автоматизации, т.к. ручное поднятие каждый раз - не эффективная история. Несмотря на то, что диски есть, инициализацию всего реплика-сета приходится запускать каждый раз.
+
 
 ## P.S. Полезные команды
 Приостановка балансировки
@@ -263,6 +358,11 @@ echo "127.0.0.1 mongo1" | sudo tee -a /etc/hosts
 echo "127.0.0.1 mongo2" | sudo tee -a /etc/hosts
 echo "127.0.0.1 mongo3" | sudo tee -a /etc/hosts
 ```
+echo -e "127.0.0.1 mongo-config-server-1 mongo-config-server-2 mongo-config-server-3
+127.0.0.1 mongo-shard1-rs1 mongo-shard1-rs2 mongo-shard1-rs3
+127.0.0.1 mongo-shard2-rs1 mongo-shard2-rs2 mongo-shard2-rs3
+127.0.0.1 mongo-shard3-rs1 mongo-shard3-rs2 mongo-shard3-rs3
+127.0.0.1 mongos-router" | sudo tee -a /etc/hosts
 
 Для прямого соединения с бд указывать параметр directConnection
 
@@ -311,3 +411,23 @@ db.chunks.findOne({ ns: "sample_db.companies" })
 // Принудительная балансировка конкретной коллекции
 sh.moveChunk("sample_db.companies", { permalink: "twitter" }, "shard2")
 ```
+
+
+## Распространение пользователей в кластере
+### Для серверов конфигурации
+Только на первичной (primary) ноде:
+  1. Пользователи создаются один раз на первичном config сервере
+  2. Автоматически реплицируются на все вторичные config серверы через механизм replica set
+  3. Не нужно создавать вручную на каждом config сервере
+
+### Для шардов
+На первичной ноде каждого шарда:
+  1. Локальные пользователи для каждого шарда создаются на его первичной ноде
+  2. Реплицируются на вторичные ноды шарда автоматически
+  3. Пользователи базы данных admin реплицируются на все шарды
+
+### Для роутеров (mongos))
+
+Не хранят пользователей:
+  1. Mongos не хранит данные аутентификации
+  2. Перенаправляет запросы аутентификации на config серверы
