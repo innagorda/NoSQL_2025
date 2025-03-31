@@ -143,8 +143,6 @@ services:
     command: mongos --configdb cfgrs/cfg1:27019,cfg2:27019,cfg3:27019 --bind_ip_all --port 27017
     ports:
       - "27017:27017"  # Основной порт для подключения клиентов
-    volumes:
-      - mongos-data:/data/db
     depends_on:
       - cfg1
       - cfg2
@@ -164,7 +162,6 @@ volumes:
   cfg1-data:
   cfg2-data:
   cfg3-data:
-  mongos-data:
   shard1-rs1-data:
   shard1-rs2-data:
   shard1-rs3-data:
