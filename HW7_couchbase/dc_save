@@ -1,0 +1,48 @@
+services:
+  couchbase-node1:
+    image: couchbase/server:7.1.1
+    container_name: couchbase-node1
+    ports:
+      - "8091:8091"  
+      - "11210:11210" 
+    networks:
+      - couchbase-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8091/pools"]
+    environment:
+      - CLUSTER_NAME=test_cluster
+      - COUCHBASE_ADMINISTRATOR_USERNAME=admin
+      - COUCHBASE_ADMINISTRATOR_PASSWORD=password
+      - CLUSTER_INDEX_QUOTA=0    # Отключаем индексы
+      - CLUSTER_FTS_QUOTA=0      # Отключаем полнотекстовый поиск
+      - CLUSTER_EVENTING_QUOTA=0 # Отключаем Eventing
+    volumes:
+      - node1-data:/opt/couchbase/var
+
+  couchbase-node2:
+    image: couchbase/server:7.1.1
+    container_name: couchbase-node2
+    depends_on: 
+      couchbase-node1:
+        condition: service_healthy
+    environment:
+      - CLUSTER_INIT_HOST=couchbase-node1
+    volumes:
+      - node2-data:/opt/couchbase/var
+
+  couchbase-node3:
+    image: couchbase/server:7.1.1
+    container_name: couchbase-node3
+    depends_on:
+      couchbase-node1:
+        condition: service_healthy
+    environment:
+      - CLUSTER_INIT_HOST=couchbase-node1
+    volumes:
+      - node3-data:/opt/couchbase/var
+
+volumes:
+  node1-data:
+  node2-data:
+  node3-data:
+
