@@ -1,0 +1,25 @@
+services:
+  couchbase1:
+    image: couchbase/server
+    container_name: couchbase1
+    volumes:
+      - ./node1:/opt/couchbase/var
+    ports:
+      - 8094:8091
+  couchbase2:
+    image: couchbase/server
+    container_name: couchbase2
+    volumes:
+      - ./node2:/opt/couchbase/var
+    ports:
+      - 8095:8091
+  couchbase3:
+    image: couchbase/server
+    container_name: couchbase3
+    volumes:
+      - ./node3:/opt/couchbase/var
+    ports:
+      - 8091:8091
+      - 8092:8092
+      - 8093:8093
+      - 11210:11210

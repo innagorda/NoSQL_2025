@@ -1,0 +1,63 @@
+services:
+  couchbase-node1:
+    image: couchbase/server:7.1.1
+    container_name: couchbase-node1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8091/pools"]
+    ports:
+      - 8091:8091
+      - 8092:8092
+      - 8093:8093
+      - 11210:11210
+    volumes:
+      - node1-data:/opt/couchbase/var
+    environment:
+      - TYPE=cluster
+      - CLUSTER_NAME=test_cluster
+      - COUCHBASE_ADMINISTRATOR_USERNAME=admin
+      - COUCHBASE_ADMINISTRATOR_PASSWORD=password
+      - COUCHBASE_SERVICES=data,query  # Добавляем query
+      - CLUSTER_INDEX_QUOTA=512        # Включаем индексы (MB)
+    networks:
+      - couchbase-net
+
+  couchbase-node2:
+    image: couchbase/server:7.1.1
+    container_name: couchbase-node2
+    ports:
+      - 8094:8091
+    volumes:
+      - node2-data:/opt/couchbase/var
+    environment:
+      - TYPE=cluster
+      - CLUSTER_INIT_HOST=couchbase-node1
+    depends_on:
+      couchbase-node1:
+        condition: service_healthy
+    networks:
+      - couchbase-net
+
+  couchbase-node3:
+    image: couchbase/server:7.1.1
+    container_name: couchbase-node3
+    ports:
+      - 8095:8091
+    volumes:
+      - node3-data:/opt/couchbase/var
+    environment:
+      - TYPE=cluster
+      - CLUSTER_INIT_HOST=couchbase-node1
+    depends_on:
+      couchbase-node1:
+        condition: service_healthy
+    networks:
+      - couchbase-net
+
+volumes:
+  node1-data:
+  node2-data:
+  node3-data:
+
+networks:
+  couchbase-net:
+    driver: bridge

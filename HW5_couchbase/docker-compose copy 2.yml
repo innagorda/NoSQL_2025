@@ -1,0 +1,89 @@
+version: '3'
+
+services:
+  db1.lan:
+    image: couchbase:7.6.2
+    container_name: db1.lan
+    hostname: db1.lan
+    ports:
+      - "8091:8091"
+      - "8092:8092"
+      - "8093:8093"
+      - "8094:8094"
+      - "8095:8095"
+      - "8096:8096"
+      - "8097:8097"
+      - "9102:9102"
+      - "11210:11210"
+      - "11211:11211"
+    networks:
+      - couchbase-net
+    environment:
+      - COUCHBASE_USER=${COUCHBASE_USER}
+      - COUCHBASE_PASSWORD=${COUCHBASE_PASSWORD}
+      - COUCHBASE_CLUSTER_NAME=${COUCHBASE_CLUSTER_NAME:-MyCluster}
+      - COUCHBASE_SERVICES=kv,index,n1ql,fts,analytics,eventing,backup
+      - COUCHBASE_INDEX_STORAGE_SETTING=memopt
+    volumes:
+      - node1-data:/opt/couchbase/var
+
+  db2.lan:
+    image: couchbase:7.6.2
+    container_name: db2.lan
+    hostname: db2.lan
+    ports:
+      - "9081:8091"
+      - "9082:8092"
+      - "9083:8093"
+      - "9084:8094"
+      - "9085:8095"
+      - "9086:8096"
+      - "9087:8097"
+      - "9103:9102"
+      - "11220:11210"
+    networks:
+      - couchbase-net
+    environment:
+      - COUCHBASE_USER=${COUCHBASE_USER}
+      - COUCHBASE_PASSWORD=${COUCHBASE_PASSWORD}
+      - COUCHBASE_CLUSTER_INIT_HOSTS=db1.lan
+    volumes:
+      - node2-data:/opt/couchbase/var
+    depends_on:
+      - db1.lan
+
+  db3.lan:
+    image: couchbase:7.6.2
+    container_name: db3.lan
+    hostname: db3.lan
+    ports:
+      - "10091:8091"
+      - "10092:8092"
+      - "10093:8093"
+      - "10094:8094"
+      - "10095:8095"
+      - "10096:8096"
+      - "10097:8097"
+      - "9104:9102"
+      - "11230:11210"
+    networks:
+      - couchbase-net
+    environment:
+      - COUCHBASE_USER=${COUCHBASE_USER}
+      - COUCHBASE_PASSWORD=${COUCHBASE_PASSWORD}
+      - COUCHBASE_CLUSTER_INIT_HOSTS=db1.lan
+    volumes:
+      - node3-data:/opt/couchbase/var
+    depends_on:
+      - db1.lan
+
+volumes:
+  node1-data:
+  node2-data:
+  node3-data:
+
+networks:
+  couchbase-net:
+    driver: bridge
+
+
