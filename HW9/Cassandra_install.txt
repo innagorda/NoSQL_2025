@@ -1,0 +1,126 @@
+gcloud compute instances start admin
+gcloud compute instances list
+
+
+-- развернем ВМ postgres в GCE
+--image-family=ubuntu-2004-lts
+gcloud beta compute --project=investigation1-368417 instances create cassandra1 --zone=us-central1-a --machine-type=e2-standard-2 --subnet=default --network-tier=PREMIUM --maintenance-policy=MIGRATE --service-account=648433767977-compute@developer.gserviceaccount.com --scopes=https://www.googleapis.com/auth/devstorage.read_only,https://www.googleapis.com/auth/logging.write,https://www.googleapis.com/auth/monitoring.write,https://www.googleapis.com/auth/servicecontrol,https://www.googleapis.com/auth/service.management.readonly,https://www.googleapis.com/auth/trace.append --image-family=ubuntu-2004-lts --image-project=ubuntu-os-cloud --boot-disk-size=10GB --boot-disk-type=pd-ssd --boot-disk-device-name=cassandra --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --reservation-affinity=any
+-- Экземпляр №2
+gcloud beta compute --project=investigation1-368417 instances create cassandra2 --zone=us-central1-a --machine-type=e2-standard-2 --subnet=default --network-tier=PREMIUM --maintenance-policy=MIGRATE --service-account=648433767977-compute@developer.gserviceaccount.com --scopes=https://www.googleapis.com/auth/devstorage.read_only,https://www.googleapis.com/auth/logging.write,https://www.googleapis.com/auth/monitoring.write,https://www.googleapis.com/auth/servicecontrol,https://www.googleapis.com/auth/service.management.readonly,https://www.googleapis.com/auth/trace.append --image-family=ubuntu-2004-lts --image-project=ubuntu-os-cloud --boot-disk-size=10GB --boot-disk-type=pd-ssd --boot-disk-device-name=cassandra2 --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --reservation-affinity=any
+
+gcloud compute instances stop admin
+
+
+- поставим докер
+-- https://docs.docker.com/engine/install/ubuntu/
+curl -fsSL https://get.docker.com -o get-docker.sh && sudo sh get-docker.sh && rm get-docker.sh && sudo usermod -aG docker $USER
+
+-- поставим docker-compose
+sudo apt install docker-compose -y
+
+-- Вытянем image cassandra
+sudo docker image pull cassandra:4.0.9
+
+sudo docker run --rm -d --name tmp cassandra:4.0.9
+
+sudo docker cp tmp:/etc/cassandra etc_cassandra-4.0.9_vanilla
+sudo docker stop tmp
+
+-- копируем конфиги
+mkdir -p etc
+cp -a etc_cassandra-4.0.9_vanilla etc/cass1
+cp -a etc_cassandra-4.0.9_vanilla etc/cass2
+cp -a etc_cassandra-4.0.9_vanilla etc/cass3
+
+sudo rm docker-compose.yml
+nano docker-compose.yml
+
+
+
+-- старт
+sudo docker-compose up -d
+
+sudo docker ps
+-- если нужно, перезапускаем
+sudo docker start user_cassandra1_1
+sudo docker start user_cassandra2_1
+sudo docker start user_cassandra-seed_1
+
+sudo docker exec -ti user_cassandra-seed_1 bash
+cqlsh
+
+-- можем посмотреть схему
+describe keyspaces;
+describe tables;
+
+-- Версия каси
+nodetool version
+-- или 
+sudo docker run --rm -it --network cassandra nuvo/docker-cqlsh cqlsh cassandra 9042
+sudo docker stop cass1
+
+-- создадим KEYSPACE
+CREATE KEYSPACE IF NOT EXISTS store WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : '2' };
+
+-- Create a table
+CREATE TABLE IF NOT EXISTS store.shopping_cart (
+userid text PRIMARY KEY,
+item_count int,
+last_update_timestamp timestamp
+);
+
+-- Insert some data
+INSERT INTO store.shopping_cart
+(userid, item_count, last_update_timestamp)
+VALUES ('9876', 2, toTimeStamp(now()));
+INSERT INTO store.shopping_cart
+(userid, item_count, last_update_timestamp)
+VALUES ('1234', 5, toTimeStamp(now()));
+
+-- читаем
+SELECT * FROM store.shopping_cart;
+
+-- ещё пример
+CREATE TABLE IF NOT EXISTS store.shopping_cart2 (
+userid text,
+item_count int,
+date_created date,
+last_update_timestamp timestamp,
+PRIMARY KEY ((userid, date_created), last_update_timestamp)
+);
+
+-- добавляем данные
+INSERT INTO store.shopping_cart2
+(userid, item_count, date_created, last_update_timestamp)
+VALUES ('9876', 2, '2023-05-03', toTimeStamp(now()));
+INSERT INTO store.shopping_cart2
+(userid, item_count, date_created,  last_update_timestamp)
+VALUES ('1234', 5, '2023-05-02', toTimeStamp(now()));
+
+
+
+SELECT * FROM store.shopping_cart2;
+
+SELECT * FROM store.shopping_cart2 WHERE userid = '1234' AND date_created = '2023-05-03';
+SELECT * FROM store.shopping_cart2 WHERE userid = '1234' AND date_created = '2023-05-02';
+SELECT * FROM store.shopping_cart2 WHERE userid = '1234' AND date_created = '2023-05-02' AND last_update_timestamp = '2023-05-03 18:13:16.640000+0000';
+SELECT * FROM store.shopping_cart2 WHERE userid = '1234' AND date_created = '2023-05-02' AND last_update_timestamp > '2023-05-03 18:13:16.640000+0000';
+
+SELECT * FROM store.shopping_cart2 WHERE userid = '1234';
+SELECT * FROM store.shopping_cart2 WHERE userid = '1234' OR date_created = '2023-05-03';
+SELECT * FROM store.shopping_cart2 WHERE userid = '1234' ALLOW FILTERING;
+
+-- добавим ещё строчку
+INSERT INTO store.shopping_cart2
+(userid, item_count, date_created,  last_update_timestamp)
+VALUES ('1234', 5, '2023-05-03', toTimeStamp(now()));
+
+
+INSERT INTO store.shopping_cart2
+(userid, item_count, date_created,  last_update_timestamp)
+VALUES ('1234', 6, '2023-05-03', toTimeStamp(now()));
+
+
+
+ gcloud compute instances stop cassandra2
+ gcloud compute instances delete cassandra2
