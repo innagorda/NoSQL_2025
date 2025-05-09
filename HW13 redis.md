@@ -65,3 +65,15 @@ pip install redis
 - предоставить отчет.
 
 Задание в jupyter notebook [testing_data.ipynb](./HW13/testing_data.ipynb)
+
+#### 4. Выводы
+
+- Пакетная запись (pipeline) дает 10-15 кратное ускорение
+- ZSet оптимален для сценариев с частым чтением
+- String показывает лучшую скорость записи
+- Hash - самая "тяжелая" структура
+- Для 36k элементов разница между структурами существенна
+
+![results](pictures/13_3_results.png)
+
+![write time](pictures/13_4_write_time.png)
