@@ -17,7 +17,7 @@
 
 ### 1. Заполнение docker-compose.yml 
 
-[Файл docker-compose.yml](./HW4/docker-compose.yml )
+[Файл docker-compose.yml](./HW22/docker-compose.yml )
 
 Раньше Kafka зависела от ZooKeeper для хранения метаданных (топики, партиции, офсеты и т. д.), теперь сама управляет своим состоянием через встроенный Raft-консенсус, убирая зависимость от ZooKeeper. KRaft позволяет Kafka масштабироваться до миллионов партиций (в тестах Apache Kafka 3.7+ поддерживает десятки миллионов партиций). В KRaft перевыборы лидера происходят быстрее, так как Kafka сама управляет консенсусом
 
@@ -107,4 +107,4 @@ docker exec -it broker /opt/kafka/bin/kafka-console-consumer.sh \
 ### 5. Python + kafka
 
 Код в jupyter notebook
-[Файл kafka.ipynb](./HW4/kafka.ipynb)
+[Файл kafka.ipynb](./HW22/kafka.ipynb)
